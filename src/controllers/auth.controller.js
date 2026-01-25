@@ -11,7 +11,7 @@ exports.sendOtp = (req, res) => {
                ON DUPLICATE KEY UPDATE otp = ?, expires_at = DATE_ADD(NOW(), INTERVAL 5 MINUTE)`;
 
   db.query(sql, [phone, otp, otp], (err) => {
-    if (err) return res.status(500).json({ message: "Error sending OTP" });
+    if (err) return res.status(500).json({ message: "Error sending OTP",error: err.code });
     res.json({ message: "OTP sent successfully", otp }); 
   });
 };
