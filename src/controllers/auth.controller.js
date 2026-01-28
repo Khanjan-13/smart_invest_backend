@@ -17,7 +17,7 @@ exports.sendOtp = (req, res) => {
 };
 
 // 2️⃣ Verify OTP
-exports.verifyOtp = (req, res) => {
+exports.verifyOtp = (req, res) => { 
   const { phone, otp } = req.body;
 
   const sql = `SELECT * FROM otps WHERE phone = ? AND otp = ? AND expires_at > NOW()`;
@@ -65,53 +65,103 @@ exports.verifyKyc = (req, res) => {
 exports.verifyBankAccount = (req, res) => {
   const { mobile_no, bank_name } = req.body;
 
-  // 1. NEW CHECKPOINT: Verify if the mobile number is linked to the passed bank name
-  const checkBankLinkSql = `
-    SELECT id FROM bank_accounts 
+  // 1. Fetch bank account + account holder name
+  const bankSql = `
+    SELECT account_holder_name
+    FROM bank_accounts
     WHERE mobile_no = ? AND bank_name = ?
   `;
 
-  db.query(checkBankLinkSql, [mobile_no, bank_name], (err, bankRows) => {
-    if (err) return res.status(500).json({ message: "Database error during bank lookup" });
+  db.query(bankSql, [mobile_no, bank_name], (err, bankRows) => {
+    if (err) {
+      return res.status(500).json({ message: "Database error during bank lookup" });
+    }
 
     if (bankRows.length === 0) {
-      return res.status(404).json({ 
-        message: "This mobile number is not linked to an account in the specified bank." 
+      return res.status(404).json({
+        message: "This mobile number is not linked to the selected bank."
       });
     }
 
-    // 2. Check if the user is KYC verified in the user_kyc table
+    const accountHolderName = bankRows[0].account_holder_name;
+
+    // 2. Check KYC verification
     const kycSql = `
-      SELECT id FROM user_kyc 
-      WHERE mobile_no = ? AND aadhaar_verified = 1 AND pan_verified = 1
+      SELECT id
+      FROM user_kyc
+      WHERE mobile_no = ?
+        AND aadhaar_verified = 1
+        AND pan_verified = 1
     `;
 
     db.query(kycSql, [mobile_no], (err2, kycRows) => {
-      if (err2) return res.status(500).json({ message: "Database error during KYC check" });
+      if (err2) {
+        return res.status(500).json({ message: "Database error during KYC check" });
+      }
 
       if (kycRows.length === 0) {
-        return res.status(403).json({ 
-          message: "KYC not verified. Please complete Aadhaar and PAN verification first." 
+        return res.status(403).json({
+          message: "KYC not verified. Please complete Aadhaar and PAN verification."
         });
       }
 
-      // 3. Update is_verified to 1 (true) now that both previous checks passed
-      const updateSql = `
-        UPDATE bank_accounts 
-        SET is_verified = 1 
+      // 3. Mark bank account as verified
+      const verifyBankSql = `
+        UPDATE bank_accounts
+        SET is_verified = 1
         WHERE mobile_no = ? AND bank_name = ?
       `;
 
-      db.query(updateSql, [mobile_no, bank_name], (err3, result) => {
-        if (err3) return res.status(500).json({ message: "Bank verification update failed" });
+      db.query(verifyBankSql, [mobile_no, bank_name], (err3) => {
+        if (err3) {
+          return res.status(500).json({ message: "Failed to verify bank account" });
+        }
 
-        res.json({ 
-          message: `Bank account at ${bank_name} verified successfully!` 
-        });
+        // 4. Generate UPI ID
+        const formattedName = accountHolderName
+          .toLowerCase()
+          .replace(/[^a-z\s]/g, '')   // remove special chars
+          .trim()
+          .replace(/\s+/g, '.');      // spaces → dots
+
+        const formattedBank = bank_name
+          .toLowerCase()
+          .replace(/\s+/g, '')
+          .replace(/[^a-z]/g, '');
+
+        const upiId = `${formattedName}@${formattedBank}`;
+
+        // 5. Update users table
+        const updateUserSql = `
+          UPDATE users
+          SET full_name = ?, upi_id = ?
+          WHERE phone = ?
+        `;
+
+        db.query(
+          updateUserSql,
+          [accountHolderName, upiId, mobile_no],
+          (err4) => {
+            if (err4) {
+              return res.status(500).json({
+                message: "Failed to update user profile"
+              });
+            }
+
+            return res.json({
+              message: `Bank account at ${bank_name} verified successfully`,
+              full_name: accountHolderName,
+              upi_id: upiId
+            });
+          }
+        );
       });
     });
   });
 };
+
+
+
 
 // 5️⃣ Set Security PIN
 exports.setSecurityPin = async (req, res) => {
@@ -134,7 +184,7 @@ exports.setUpiPin = async (req, res) => {
   const sql = `INSERT INTO upi_pins (user_id, upi_pin) 
                SELECT id, ? FROM users WHERE phone = ?`;
 
-  db.query(sql, [hashedUpiPin, phone], (err) => {
+  db.query(sql, [hashedUpiPin, phone], (err) => { 
     if (err) return res.status(500).json({ message: "UPI PIN set failed" });
     res.json({ message: "UPI PIN set successfully" });
   });
