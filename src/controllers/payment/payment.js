@@ -1,6 +1,12 @@
 const db = require("../../config/db");
 const QRCode = require("qrcode");
 const { v4: uuidv4 } = require("uuid");
+function rollback(conn, res, errorCode) {
+  conn.rollback(() => {
+    conn.release();
+    res.status(400).json({ error: errorCode });
+  });
+}
 
 /* =====================
    GENERATE QR (DYNAMIC)
@@ -29,6 +35,40 @@ exports.generateQR = async (req, res) => {
    INITIATE PAYMENT
    (QR / UPI)
 ===================== */
+// exports.initiatePayment = (req, res) => {
+//   const { payer_upi, payee_upi, amount, payment_mode } = req.body;
+
+//   if (!payer_upi || !payee_upi || amount <= 0)
+//     return res.status(400).json({ error: "INVALID_INPUT" });
+
+//   if (payer_upi === payee_upi)
+//     return res.status(400).json({ error: "INVALID_TRANSACTION" });
+
+//   const mode = payment_mode || "UPI"; // default
+
+//   const txnId = "TXN_" + uuidv4().slice(0, 8);
+
+//   db.query(
+//     `INSERT INTO transactions 
+//      (txn_id, payer_upi, payee_upi, amount, payment_method, status)
+//      VALUES (?, ?, ?, ?, ?, 'PENDING')`,
+//     [txnId, payer_upi, payee_upi, amount, mode],
+//     err => {
+//       if (err) {
+//         console.error(err);
+//         return res.status(500).json({ error: "DB_ERROR" });
+//       }
+
+//       res.json({
+//         txn_id: txnId,
+//         status: "PENDING",
+//         payment_mode: mode,
+//         message: "Awaiting bank confirmation"
+//       });
+//     }
+//   );
+// };
+
 exports.initiatePayment = (req, res) => {
   const { payer_upi, payee_upi, amount, payment_mode } = req.body;
 
@@ -38,30 +78,84 @@ exports.initiatePayment = (req, res) => {
   if (payer_upi === payee_upi)
     return res.status(400).json({ error: "INVALID_TRANSACTION" });
 
-  const mode = payment_mode || "UPI"; // default
-
+  const mode = payment_mode || "UPI";
   const txnId = "TXN_" + uuidv4().slice(0, 8);
 
-  db.query(
-    `INSERT INTO transactions 
-     (txn_id, payer_upi, payee_upi, amount, payment_method, status)
-     VALUES (?, ?, ?, ?, ?, 'PENDING')`,
-    [txnId, payer_upi, payee_upi, amount, mode],
-    err => {
+  db.getConnection((err, conn) => {
+    if (err) return res.status(500).json({ error: "DB_CONN_ERROR" });
+
+    conn.beginTransaction(err => {
       if (err) {
-        console.error(err);
-        return res.status(500).json({ error: "DB_ERROR" });
+        conn.release();
+        return res.status(500).json({ error: "TXN_START_FAILED" });
       }
 
-      res.json({
-        txn_id: txnId,
-        status: "PENDING",
-        payment_mode: mode,
-        message: "Awaiting bank confirmation"
+      // 1️⃣ Lock payer row
+      const payerSql = `
+        SELECT balance FROM users 
+        WHERE upi_id = ? 
+        FOR UPDATE
+      `;
+
+      conn.query(payerSql, [payer_upi], (err, payerRows) => {
+        if (err || payerRows.length === 0) {
+          return rollback(conn, res, "PAYER_NOT_FOUND");
+        }
+
+        const payerBalance = payerRows[0].balance;
+
+        if (payerBalance < amount) {
+          return rollback(conn, res, "INSUFFICIENT_BALANCE");
+        }
+
+        // 2️⃣ Debit payer
+        conn.query(
+          `UPDATE users SET balance = balance - ? WHERE upi_id = ?`,
+          [amount, payer_upi],
+          err => {
+            if (err) return rollback(conn, res, "DEBIT_FAILED");
+
+            // 3️⃣ Credit payee
+            conn.query(
+              `UPDATE users SET balance = balance + ? WHERE upi_id = ?`,
+              [amount, payee_upi],
+              err => {
+                if (err) return rollback(conn, res, "CREDIT_FAILED");
+
+                // 4️⃣ Insert SUCCESS transaction
+                conn.query(
+                  `INSERT INTO transactions
+                  (txn_id, payer_upi, payee_upi, amount, payment_method, status)
+                  VALUES (?, ?, ?, ?, ?, 'SUCCESS')`,
+                  [txnId, payer_upi, payee_upi, amount, mode],
+                  err => {
+                    if (err) return rollback(conn, res, "TXN_LOG_FAILED");
+
+                    conn.commit(err => {
+                      if (err)
+                        return rollback(conn, res, "COMMIT_FAILED");
+
+                      conn.release();
+
+                      res.json({
+                        txn_id: txnId,
+                        status: "SUCCESS",
+                        amount,
+                        payment_mode: mode,
+                        message: "Payment successful"
+                      });
+                    });
+                  }
+                );
+              }
+            );
+          }
+        );
       });
-    }
-  );
+    });
+  });
 };
+
 
 /* =====================
    PAY VIA MOBILE
