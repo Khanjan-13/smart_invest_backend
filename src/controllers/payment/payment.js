@@ -167,10 +167,21 @@ exports.payViaMobile = (req, res) => {
     return res.status(400).json({ error: "INVALID_INPUT" });
 
   db.query(
-    "SELECT upi_id FROM users WHERE mobile = ?",
+    "SELECT upi_id FROM users WHERE phone = ?",
     [mobile],
     (err, result) => {
-      if (err) return res.status(500).json({ error: "DB_ERROR" });
+if (err) {
+  console.error("❌ MySQL Error:", err);
+  return res.status(500).json({
+    error: "DB_ERROR",
+    mysql: {
+      code: err.code,
+      errno: err.errno,
+      message: err.sqlMessage,
+      sql: err.sql
+    }
+  });
+}
 
       if (result.length === 0)
         return res.status(404).json({ error: "MOBILE_NOT_LINKED" });
@@ -237,6 +248,75 @@ exports.checkStatus = (req, res) => {
         return res.status(404).json({ error: "TXN_NOT_FOUND" });
 
       res.json(result[0]);
+    }
+  );
+};
+
+/* =====================
+   CHECK BALANCE
+===================== */
+exports.checkBalance = (req, res) => {
+  const { upi_id } = req.params;
+
+  if (!upi_id)
+    return res.status(400).json({ error: "INVALID_INPUT" });
+
+  db.query(
+    "SELECT upi_id, balance, status FROM users WHERE upi_id = ?",
+    [upi_id],
+    (err, result) => {
+      if (err) {
+        console.error("❌ MySQL Error:", err);
+        return res.status(500).json({ error: "DB_ERROR" });
+      }
+
+      if (result.length === 0)
+        return res.status(404).json({ error: "USER_NOT_FOUND" });
+
+      res.json({
+        upi_id: result[0].upi_id,
+        balance: result[0].balance,
+        status: result[0].status
+      });
+    }
+  );
+};
+
+/* =====================
+   TRANSACTION HISTORY
+===================== */
+exports.transactionHistory = (req, res) => {
+  const { upi_id } = req.params;
+
+  if (!upi_id)
+    return res.status(400).json({ error: "INVALID_INPUT" });
+
+  db.query(
+    `
+    SELECT 
+      txn_id,
+      payer_upi,
+      payee_upi,
+      amount,
+      payment_method,
+      status,
+      created_at
+    FROM transactions
+    WHERE payer_upi = ? OR payee_upi = ?
+    ORDER BY created_at DESC
+    `,
+    [upi_id, upi_id],
+    (err, result) => {
+      if (err) {
+        console.error("❌ MySQL Error:", err);
+        return res.status(500).json({ error: "DB_ERROR" });
+      }
+
+      res.json({
+        upi_id,
+        total_transactions: result.length,
+        transactions: result
+      });
     }
   );
 };
