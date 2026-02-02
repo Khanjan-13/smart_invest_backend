@@ -136,7 +136,7 @@ exports.initiatePayment = (req, res) => {
 
   const totalDebit = amount + auto_save_amount;
   const mode = payment_mode || "UPI";
-  const txnId = "TXN_" + uuidv4().slice(0, 8);
+  const txnId = "TXN_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
   const txnNote = note || null;
 
   db.getConnection((err, conn) => {
@@ -147,18 +147,21 @@ exports.initiatePayment = (req, res) => {
 
       // 1️⃣ Lock payer
       conn.query(
-        `SELECT id, balance FROM users WHERE upi_id = ? FOR UPDATE`,
+        `SELECT id, balance, full_name 
+         FROM users 
+         WHERE upi_id = ? FOR UPDATE`,
         [payer_upi],
         (err, payerRows) => {
           if (err || payerRows.length === 0)
             return rollback(conn, res, "PAYER_NOT_FOUND");
 
           const payerId = payerRows[0].id;
+          const payerName = payerRows[0].full_name;
 
           if (payerRows[0].balance < totalDebit)
             return rollback(conn, res, "INSUFFICIENT_BALANCE");
 
-          // 2️⃣ Debit payer (amount + auto save)
+          // 2️⃣ Debit payer (amount + auto-save)
           conn.query(
             `UPDATE users SET balance = balance - ? WHERE id = ?`,
             [totalDebit, payerId],
@@ -172,71 +175,95 @@ exports.initiatePayment = (req, res) => {
                 err => {
                   if (err) return rollback(conn, res, "CREDIT_FAILED");
 
-                  // 4️⃣ Credit auto-save to wallet_balance
-                  if (auto_save_amount > 0) {
-                    conn.query(
-                      `UPDATE users 
-                      SET wallet_balance = wallet_balance + ? 
-                      WHERE id = ?`,
-                      [auto_save_amount, payerId],
-                      err => {
-                        if (err)
-                          return rollback(conn, res, "WALLET_UPDATE_FAILED");
+                  // 4️⃣ Update wallet_balance (if auto-save)
+                  const updateWallet = cb => {
+                    if (auto_save_amount > 0) {
+                      conn.query(
+                        `UPDATE users 
+                         SET wallet_balance = wallet_balance + ? 
+                         WHERE id = ?`,
+                        [auto_save_amount, payerId],
+                        err => {
+                          if (err)
+                            return rollback(conn, res, "WALLET_UPDATE_FAILED");
+                          cb();
+                        }
+                      );
+                    } else {
+                      cb();
+                    }
+                  };
 
-                        insertTransaction();
+                  // 5️⃣ Fetch payee name
+                  const fetchPayeeName = cb => {
+                    conn.query(
+                      `SELECT full_name FROM users WHERE upi_id = ?`,
+                      [payee_upi],
+                      (err, payeeRows) => {
+                        if (err || payeeRows.length === 0)
+                          return rollback(conn, res, "PAYEE_NOT_FOUND");
+                        cb(payeeRows[0].full_name);
                       }
                     );
-                  } else {
-                    insertTransaction();
-                  }
+                  };
 
-
-                  // 5️⃣ Insert main transaction
-                  function insertTransaction() {
+                  // 6️⃣ Insert transaction (ONLY ONCE)
+                  const insertTransaction = payeeName => {
                     conn.query(
                       `INSERT INTO transactions
-                      (txn_id, payer_upi, payee_upi, amount, notes, payment_method, status)
-                      VALUES (?, ?, ?, ?, ?, ?, 'SUCCESS')`,
-                      [txnId, payer_upi, payee_upi, amount, txnNote, mode],
+                      (txn_id, payer_upi, payer_name,
+                       payee_upi, payee_name,
+                       amount, notes, payment_method, status)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS')`,
+                      [
+                        txnId,
+                        payer_upi,
+                        payerName,
+                        payee_upi,
+                        payeeName,
+                        amount,
+                        txnNote,
+                        mode
+                      ],
                       (err, txnResult) => {
-                        if (err) {
-                          console.error("❌ TXN LOG ERROR:", err);
-                          return rollback(conn, res, err.sqlMessage || "TXN_LOG_FAILED");
-                        }
-
+                        if (err)
+                          return rollback(
+                            conn,
+                            res,
+                            err.sqlMessage || "TXN_LOG_FAILED"
+                          );
 
                         const transactionId = txnResult.insertId;
 
-                        // 6️⃣ Wallet transaction entry
+                        // 7️⃣ Wallet transaction entry
+                        const insertWalletTxn = cb => {
                           if (auto_save_amount > 0) {
                             conn.query(
                               `INSERT INTO wallet_transactions (t_id, amount)
-                              VALUES (?, ?)`,
+                               VALUES (?, ?)`,
                               [transactionId, auto_save_amount],
                               err => {
-                                if (err) {
-                                  console.error("❌ WALLET TXN ERROR:", err);
+                                if (err)
                                   return rollback(
                                     conn,
                                     res,
                                     err.sqlMessage || "WALLET_TXN_FAILED"
                                   );
-                                }
-                                commitTxn();
+                                cb();
                               }
                             );
                           } else {
-                            commitTxn();
+                            cb();
                           }
+                        };
 
-
-                        function commitTxn() {
+                        // 8️⃣ Commit everything
+                        insertWalletTxn(() => {
                           conn.commit(err => {
                             if (err)
                               return rollback(conn, res, "COMMIT_FAILED");
 
                             conn.release();
-
                             res.json({
                               txn_id: txnId,
                               status: "SUCCESS",
@@ -246,10 +273,17 @@ exports.initiatePayment = (req, res) => {
                               message: "Payment successful"
                             });
                           });
-                        }
+                        });
                       }
                     );
-                  }
+                  };
+
+                  // 🔗 Chain correctly (NO DUPLICATES)
+                  updateWallet(() => {
+                    fetchPayeeName(payeeName => {
+                      insertTransaction(payeeName);
+                    });
+                  });
                 }
               );
             }
@@ -259,6 +293,7 @@ exports.initiatePayment = (req, res) => {
     });
   });
 };
+
 
 /* =====================
    PAY VIA MOBILE
