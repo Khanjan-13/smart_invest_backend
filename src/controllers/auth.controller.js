@@ -67,7 +67,7 @@ exports.verifyBankAccount = (req, res) => {
 
   // 1. Fetch bank account + account holder name
   const bankSql = `
-    SELECT account_holder_name
+    SELECT account_holder_name, debit_card
     FROM bank_accounts
     WHERE mobile_no = ? AND bank_name = ?
   `;
@@ -84,6 +84,7 @@ exports.verifyBankAccount = (req, res) => {
     }
 
     const accountHolderName = bankRows[0].account_holder_name;
+    const debitCard = bankRows[0].debit_card;
 
     // 2. Check KYC verification
     const kycSql = `
@@ -151,7 +152,8 @@ exports.verifyBankAccount = (req, res) => {
             return res.json({
               message: `Bank account at ${bank_name} verified successfully`,
               full_name: accountHolderName,
-              upi_id: upiId
+              upi_id: upiId,
+                debit_card: debitCard
             });
           }
         );
