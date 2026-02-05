@@ -543,23 +543,42 @@ exports.transactionHistory = (req, res) => {
   );
 };
 
+/* =====================
+   WALLET HISTORY
+===================== */
 exports.walletHistory = (req, res) => {
   const { upi_id } = req.params;
 
-  if (!upi_id)
+  if (!upi_id) {
     return res.status(400).json({ error: "INVALID_INPUT" });
+  }
 
   db.query(
     `
     SELECT
-      t_id,
-      amount,
-      created_at
-    FROM wallet_transactions
-    WHERE upi_id = ?
-    ORDER BY created_at DESC
+      wt.t_id,
+      wt.amount AS wallet_amount,
+      wt.created_at,
+
+      t.txn_id,
+      t.payer_upi,
+      t.payee_upi,
+      t.payer_name,
+      t.payee_name,
+      t.payment_method,
+      t.status,
+
+      CASE
+        WHEN t.payee_upi = ? THEN 'CREDIT'
+        ELSE 'DEBIT'
+      END AS transaction_type
+
+    FROM wallet_transactions wt
+    INNER JOIN transactions t ON wt.t_id = t.id
+    WHERE t.payer_upi = ? OR t.payee_upi = ?
+    ORDER BY wt.created_at DESC
     `,
-    [upi_id],
+    [upi_id, upi_id, upi_id],
     (err, result) => {
       if (err) {
         console.error("❌ MySQL Error:", err);
@@ -575,6 +594,9 @@ exports.walletHistory = (req, res) => {
   );
 };
 
+/* =====================
+   GET WALLET BALANCE
+===================== */
 exports.getWalletBalance = (req, res) => {
   const { upi_id } = req.params;
 
