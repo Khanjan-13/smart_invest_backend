@@ -455,45 +455,6 @@ exports.checkBalance = (req, res) => {
 };
 
 /* =====================
-   TRANSACTION HISTORY
-===================== */
-exports.transactionHistory = (req, res) => {
-  const { upi_id } = req.params;
-
-  if (!upi_id)
-    return res.status(400).json({ error: "INVALID_INPUT" });
-
-  db.query(
-    `
-    SELECT 
-      txn_id,
-      payer_upi,
-      payee_upi,
-      amount,
-      payment_method,
-      status,
-      created_at
-    FROM transactions
-    WHERE payer_upi = ? OR payee_upi = ?
-    ORDER BY created_at DESC
-    `,
-    [upi_id, upi_id],
-    (err, result) => {
-      if (err) {
-        console.error("❌ MySQL Error:", err);
-        return res.status(500).json({ error: "DB_ERROR" });
-      }
-
-      res.json({
-        upi_id,
-        total_transactions: result.length,
-        transactions: result
-      });
-    }
-  );
-};
-
-/* =====================
    SEARCH USER
    (PHONE / UPI)
 ===================== */
@@ -541,4 +502,106 @@ exports.searchUser = (req, res) => {
       user: result[0]
     });
   });
+};
+
+/* =====================
+   TRANSACTION HISTORY
+===================== */
+exports.transactionHistory = (req, res) => {
+  const { upi_id } = req.params;
+
+  if (!upi_id)
+    return res.status(400).json({ error: "INVALID_INPUT" });
+
+  db.query(
+    `
+    SELECT 
+      txn_id,
+      payer_upi,
+      payee_upi,
+      amount,
+      payment_method,
+      status,
+      created_at
+    FROM transactions
+    WHERE payer_upi = ? OR payee_upi = ?
+    ORDER BY created_at DESC
+    `,
+    [upi_id, upi_id],
+    (err, result) => {
+      if (err) {
+        console.error("❌ MySQL Error:", err);
+        return res.status(500).json({ error: "DB_ERROR" });
+      }
+
+      res.json({
+        upi_id,
+        total_transactions: result.length,
+        transactions: result
+      });
+    }
+  );
+};
+
+exports.walletHistory = (req, res) => {
+  const { upi_id } = req.params;
+
+  if (!upi_id)
+    return res.status(400).json({ error: "INVALID_INPUT" });
+
+  db.query(
+    `
+    SELECT
+      t_id,
+      amount,
+      created_at
+    FROM wallet_transactions
+    WHERE upi_id = ?
+    ORDER BY created_at DESC
+    `,
+    [upi_id],
+    (err, result) => {
+      if (err) {
+        console.error("❌ MySQL Error:", err);
+        return res.status(500).json({ error: "DB_ERROR" });
+      }
+
+      res.json({
+        upi_id,
+        total_wallet_transactions: result.length,
+        wallet_transactions: result
+      });
+    }
+  );
+};
+
+exports.getWalletBalance = (req, res) => {
+  const { upi_id } = req.params;
+
+  if (!upi_id)
+    return res.status(400).json({ error: "INVALID_INPUT" });
+
+  db.query(
+    `
+    SELECT wallet_balance
+    FROM users
+    WHERE upi_id = ?
+    `,
+    [upi_id],
+    (err, result) => {
+      if (err) {
+        console.error("❌ MySQL Error:", err);
+        return res.status(500).json({ error: "DB_ERROR" });
+      }
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: "USER_NOT_FOUND" });
+      }
+
+      res.json({
+        upi_id,
+        wallet_balance: result[0].wallet_balance
+      });
+    }
+  );
 };
