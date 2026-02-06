@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const { generateQR, initiatePayment, payViaMobile, bankCallback, checkStatus, checkBalance, transactionHistory, searchUser, walletHistory, getWalletBalance } = require("../../controllers/payment/payment");
+const { generateQR, initiatePayment, payViaMobile, bankCallback, checkStatus, checkBalance, transactionHistory, searchUser, walletHistory, getWalletBalance, transactionDetial } = require("../../controllers/payment/payment");
 
 router.post("/generate-qr", generateQR);
 router.post("/initiate-payment", initiatePayment);
@@ -13,5 +13,6 @@ router.get("/history/:upi_id", transactionHistory);
 router.get("/search", searchUser);
 router.get("/wallet-history/:upi_id", walletHistory);
 router.get("/wallet-balance/:upi_id", getWalletBalance);
+router.get("/transactions/:txn_id", transactionDetial);
 
 module.exports = router;

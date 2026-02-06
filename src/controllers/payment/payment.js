@@ -652,3 +652,62 @@ exports.getWalletBalance = (req, res) => {
     }
   );
 };
+
+exports.getTransactionByTxnId = (req, res) => {
+  const { txn_id } = req.params;
+
+  if (!txn_id)
+    return res.status(400).json({ error: "TXN_ID_REQUIRED" });
+
+  const query = `
+    SELECT 
+      t.id,
+      t.txn_id,
+      t.payer_upi,
+      t.payer_name,
+      t.payee_upi,
+      t.payee_name,
+      t.amount,
+      t.payment_method,
+      t.status,
+      t.notes,
+      t.created_at,
+      t.completed_at,
+      wt.amount AS auto_save_amount
+    FROM transactions t
+    LEFT JOIN wallet_transactions wt 
+      ON wt.t_id = t.id
+    WHERE t.txn_id = ?
+    LIMIT 1
+  `;
+
+  db.query(query, [txn_id], (err, rows) => {
+    if (err)
+      return res.status(500).json({ error: "DB_ERROR" });
+
+    if (rows.length === 0)
+      return res.status(404).json({ error: "TRANSACTION_NOT_FOUND" });
+
+    const tx = rows[0];
+
+    res.json({
+      txn_id: tx.txn_id,
+      status: tx.status,
+      payer: {
+        upi: tx.payer_upi,
+        name: tx.payer_name
+      },
+      payee: {
+        upi: tx.payee_upi,
+        name: tx.payee_name
+      },
+      amount: tx.amount,
+      payment_method: tx.payment_method,
+      notes: tx.notes,
+      auto_save_amount: tx.auto_save_amount || 0,
+      wallet_deducted: !!tx.auto_save_amount,
+      created_at: tx.created_at,
+      completed_at: tx.completed_at
+    });
+  });
+};
