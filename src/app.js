@@ -6,6 +6,9 @@ const authRoutes = require("./routes/auth.routes");
 const scrapeIfscRoutes = require("./routes/scrapeIfsc");
 const myQrRoutes = require("./routes/payment/myQr");
 const paymentRoutes = require("./routes/payment/payment");
+const indianApiRoutes = require("./routes/share_market/indian_api");
+const setWalletSettingsRoutes = require("./routes/payment/setWalletSettings");
+const autoInvestRoutes = require("./routes/payment/autoInvestment");
 const app = express();
 
 app.use(cors());
@@ -13,7 +16,8 @@ app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/scrape", scrapeIfscRoutes);
-app.use("/api/payment", myQrRoutes, paymentRoutes);
+app.use("/api/payment", myQrRoutes, paymentRoutes, setWalletSettingsRoutes, autoInvestRoutes);
+app.use("/api/share-market", indianApiRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API running on Vercel!" });
