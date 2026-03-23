@@ -100,3 +100,50 @@ exports.updateRiskFactor = async (req, res) => {
     });
   }
 };
+
+exports.getUserInvestmentSettings = async (req, res) => {
+  try {
+    const { upi_id } = req.params;
+
+    // Validation
+    if (!upi_id) {
+      return res.status(400).json({
+        success: false,
+        message: "upi_id is required"
+      });
+    }
+
+    const query = `
+      SELECT risk_factor, wallet_limit
+      FROM users
+      WHERE upi_id = ?
+    `;
+
+    const [rows] = await db.execute(query, [upi_id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    const { risk_factor, wallet_limit } = rows[0];
+
+    res.status(200).json({
+      success: true,
+      data: {
+        risk_factor,
+        wallet_limit
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching user settings:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+};
