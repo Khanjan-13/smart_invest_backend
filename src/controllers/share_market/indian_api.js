@@ -106,3 +106,41 @@ exports.getMutualFunds = async (req, res) => {
     });
   }
 };
+
+exports.getHistoricalStockData = async (req, res) => {
+  try {
+    const { stock_name, period } = req.query;
+    // random API key
+    const randomKey = apiKeys[Math.floor(Math.random() * apiKeys.length)];
+    // Validation
+    if (!stock_name || !period) {
+      return res.status(400).json({
+        success: false,
+        message: "stock_name and period are required"
+      });
+    }
+
+    // API URL
+    const url = `https://stock.indianapi.in/historical_data?stock_name=${stock_name}&period=${period}&filter=price`;
+
+    const response = await axios.get(url, {
+      headers: {
+        "X-Api-Key": randomKey
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: response.data
+    });
+
+  } catch (error) {
+    console.error("Error fetching stock data:", error?.response?.data || error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch stock data",
+      error: error?.response?.data || error.message
+    });
+  }
+};
