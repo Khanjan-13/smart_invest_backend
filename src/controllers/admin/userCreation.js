@@ -25,7 +25,7 @@ const generatePAN = (name) => {
 };
 
 const generateIFSC = () => {
-  const banks = ["HDFC", "SBIN", "ICIC", "AXIS"];
+  const banks = ["HDFC", "State Bank of India", "ICICI Bank Ltd.", "Bank of Baroda"];
   const bank = banks[getRandom(0, banks.length - 1)];
   return bank + "0" + getRandom(100000, 999999);
 };
@@ -86,7 +86,7 @@ exports.createUserFull = async (req, res) => {
     }
 
     // 🔹 Random security pin
-    const security_pin = getRandom(1000, 9999).toString();
+    const security_pin = null;
 
     // 🔹 Insert into USERS
     await db.query(
@@ -150,10 +150,61 @@ exports.createUserFull = async (req, res) => {
         full_name,
         mobile_no,
         upi_id,
+        bank_name,
+        aadhaar_no,
+        pan_no
       },
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// 🔹 GET ALL USERS DETAILS (ADMIN)
+exports.getAllUsersDetails = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+        u.id,
+        u.full_name,
+        u.phone AS mobile_no,
+        u.upi_id,
+        u.wallet_limit,
+        u.risk_factor,
+        u.balance,
+        u.wallet_balance,
+
+        k.aadhaar_no,
+        k.pan_no,
+
+        b.bank_name
+
+      FROM users u
+      LEFT JOIN user_kyc k ON u.phone = k.mobile_no
+      LEFT JOIN bank_accounts b ON u.phone = b.mobile_no
+
+      ORDER BY u.created_at DESC`
+    );
+
+    // 🔹 Optional: Mask sensitive data
+    const maskedData = rows.map(user => ({
+      ...user,
+      aadhaar_no: user.aadhaar_no
+        ? "XXXX-XXXX-" + user.aadhaar_no.slice(-4)
+        : null,
+      pan_no: user.pan_no
+        ? user.pan_no.slice(0, 5) + "****" + user.pan_no.slice(-1)
+        : null,
+    }));
+
+    res.json({
+      success: true,
+      count: maskedData.length,
+      data: maskedData,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error fetching users" });
   }
 };
