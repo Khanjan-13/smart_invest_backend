@@ -5,7 +5,7 @@ const {
   getMonthlySpending,
   getInvestmentAnalysis,
   getInvestmentBehaviour
-} = require("../../controllers/admin/userSpending");
+} = require("../../controllers/admin/userAnalysis");
 
 // 📊 Spending
 router.get("/spending/:user_id", getUserSpendingAnalysis);
