@@ -187,21 +187,10 @@ exports.getAllUsersDetails = async (req, res) => {
       ORDER BY u.created_at DESC`
     );
 
-    // 🔹 Optional: Mask sensitive data
-    const maskedData = rows.map(user => ({
-      ...user,
-      aadhaar_no: user.aadhaar_no
-        ? "XXXX-XXXX-" + user.aadhaar_no.slice(-4)
-        : null,
-      pan_no: user.pan_no
-        ? user.pan_no.slice(0, 5) + "****" + user.pan_no.slice(-1)
-        : null,
-    }));
-
     res.json({
       success: true,
-      count: maskedData.length,
-      data: maskedData,
+      count: rows.length,
+      data: rows,
     });
   } catch (error) {
     console.error(error);
