@@ -99,8 +99,8 @@ exports.deleteMultipleInvestments = async (req, res) => {
 
       await connection.query(
         `INSERT INTO investment_transactions 
-        (user_id, fund_name, category, transaction_type, amount, nav, units, commission, status) 
-        VALUES (?, ?, ?, 'SELL', ?, ?, ?, ?, 'SUCCESS')`,
+        (user_id, fund_name, category, amount, nav, units, commission) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           inv.user_id,
           inv.fund_name,
