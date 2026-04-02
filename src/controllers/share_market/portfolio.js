@@ -46,12 +46,17 @@ exports.getUserPortfolio = async (req, res) => {
 };
 
 exports.deleteMultipleInvestments = async (req, res) => {
-  const { investment_ids } = req.body;
+  const { investment_ids, current_nav } = req.body;
 
-  if (!investment_ids || !Array.isArray(investment_ids) || investment_ids.length === 0) {
+  if (
+    !investment_ids ||
+    !Array.isArray(investment_ids) ||
+    investment_ids.length === 0 ||
+    !current_nav
+  ) {
     return res.status(400).json({
       success: false,
-      message: "Please provide valid investment IDs"
+      message: "Provide investment_ids and current_nav"
     });
   }
 
@@ -60,7 +65,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. Get investments
+    // 1. Fetch investments
     const [investments] = await connection.query(
       `SELECT * FROM investments WHERE id IN (?)`,
       [investment_ids]
@@ -76,7 +81,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
 
     const userId = investments[0].user_id;
 
-    // Ensure all belong to same user
+    // Ensure same user
     const allSameUser = investments.every(inv => inv.user_id === userId);
     if (!allSameUser) {
       await connection.rollback();
@@ -86,17 +91,22 @@ exports.deleteMultipleInvestments = async (req, res) => {
       });
     }
 
+    const currentNav = parseFloat(current_nav);
+
     let totalRefund = 0;
 
-    // 2. Insert into investment_transactions
+    // 2. Process investments
     for (let inv of investments) {
-      const amount = parseFloat(inv.amount);
+      const units = parseFloat(inv.units);
 
-      const commission = (amount * 0.8) / 100; // 0.8%
-      const refundAmount = amount - commission;
+      const sellAmount = units * currentNav;
+
+      const commission = (sellAmount * 0.8) / 100;
+      const refundAmount = sellAmount - commission;
 
       totalRefund += refundAmount;
 
+      // Insert transaction
       await connection.query(
         `INSERT INTO investment_transactions 
         (user_id, fund_name, category, amount, nav, units, commission) 
@@ -105,9 +115,9 @@ exports.deleteMultipleInvestments = async (req, res) => {
           inv.user_id,
           inv.fund_name,
           inv.category,
-          amount,
-          inv.nav,
-          inv.units,
+          sellAmount,
+          currentNav,
+          units,
           commission
         ]
       );
@@ -119,7 +129,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
       [investment_ids]
     );
 
-    // 4. Update user balance (after commission deduction)
+    // 4. Update balance
     await connection.query(
       `UPDATE users SET balance = balance + ? WHERE id = ?`,
       [totalRefund, userId]
@@ -129,7 +139,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Investments sold, logged, and balance refunded",
+      message: "Investments sold using current NAV",
       refunded_amount: totalRefund
     });
 
