@@ -17,6 +17,7 @@ exports.getUserPortfolio = async (req, res) => {
       FROM investments i
       JOIN users u ON i.user_id = u.id
       WHERE u.upi_id = ?
+      AND i.status = 'ACTIVE'
       ORDER BY i.created_at DESC
     `;
 
@@ -25,7 +26,7 @@ exports.getUserPortfolio = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "No investments found"
+        message: "No active investments found"
       });
     }
 
@@ -44,7 +45,6 @@ exports.getUserPortfolio = async (req, res) => {
     });
   }
 };
-
 exports.deleteMultipleInvestments = async (req, res) => {
   const { investment_ids, current_nav } = req.body;
 
@@ -65,9 +65,9 @@ exports.deleteMultipleInvestments = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. Fetch investments
+    // 1. Fetch ONLY ACTIVE investments
     const [investments] = await connection.query(
-      `SELECT * FROM investments WHERE id IN (?)`,
+      `SELECT * FROM investments WHERE id IN (?) AND status = 'ACTIVE'`,
       [investment_ids]
     );
 
@@ -75,7 +75,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
       await connection.rollback();
       return res.status(404).json({
         success: false,
-        message: "No investments found"
+        message: "No active investments found"
       });
     }
 
@@ -106,7 +106,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
 
       totalRefund += refundAmount;
 
-      // Insert transaction
+      // Insert transaction (SELL log)
       await connection.query(
         `INSERT INTO investment_transactions 
         (user_id, fund_name, category, amount, nav, units, commission) 
@@ -123,13 +123,13 @@ exports.deleteMultipleInvestments = async (req, res) => {
       );
     }
 
-    // 3. Delete investments
+    // 3. SOFT DELETE (mark as INACTIVE)
     await connection.query(
-      `DELETE FROM investments WHERE id IN (?)`,
+      `UPDATE investments SET status = 'INACTIVE' WHERE id IN (?)`,
       [investment_ids]
     );
 
-    // 4. Update balance
+    // 4. Update user balance
     await connection.query(
       `UPDATE users SET balance = balance + ? WHERE id = ?`,
       [totalRefund, userId]
@@ -139,7 +139,7 @@ exports.deleteMultipleInvestments = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Investments sold using current NAV",
+      message: "Investments sold and marked as inactive",
       refunded_amount: totalRefund
     });
 
