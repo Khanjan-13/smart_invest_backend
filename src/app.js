@@ -13,7 +13,7 @@ const portfolioRoutes = require("./routes/share_market/portfolio");
 const adminRoutes = require("./routes/admin/auth");
 const adminUserRoutes = require("./routes/admin/userCreation");
 const analyticsRoutes = require("./routes/admin/userAnalysis");
-const adminInvestmentRoutes = require("./routes/admin/investment.routes");
+const adminInvestmentRoutes = require("./routes/admin/investment");
 
 const app = express();
 
