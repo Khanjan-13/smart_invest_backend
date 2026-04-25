@@ -108,9 +108,12 @@ exports.createUserFull = async (req, res) => {
     );
 
     // 🔹 Insert into USER_KYC
+    const aadhaar_no = generateAadhaar();
+    const pan_no = generatePAN(full_name);
+
     await db.query(
-      `INSERT INTO user_kyc 
-      (mobile_no, full_name, dob, gender, address, aadhaar_no, pan_no, aadhaar_verified, pan_verified) 
+      `INSERT INTO user_kyc
+      (mobile_no, full_name, dob, gender, address, aadhaar_no, pan_no, aadhaar_verified, pan_verified)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         mobile_no,
@@ -118,8 +121,8 @@ exports.createUserFull = async (req, res) => {
         generateDOB(),
         Math.random() > 0.5 ? "Male" : "Female",
         "India",
-        generateAadhaar(),
-        generatePAN(full_name),
+        aadhaar_no,
+        pan_no,
         1,
         1,
       ]
@@ -129,8 +132,8 @@ exports.createUserFull = async (req, res) => {
     const bank_name = "HDFC Bank";
 
     await db.query(
-      `INSERT INTO bank_accounts 
-      (mobile_no, account_holder_name, bank_name, account_number, ifsc_code, is_verified, debit_card) 
+      `INSERT INTO bank_accounts
+      (mobile_no, account_holder_name, bank_name, account_number, ifsc_code, is_verified, debit_card)
       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         mobile_no,
@@ -152,7 +155,7 @@ exports.createUserFull = async (req, res) => {
         upi_id,
         bank_name,
         aadhaar_no,
-        pan_no
+        pan_no,
       },
     });
   } catch (error) {
@@ -161,11 +164,41 @@ exports.createUserFull = async (req, res) => {
   }
 };
 
+// 🔹 UPDATE USER STATUS (ACTIVATE / DEACTIVATE)
+exports.updateUserStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const allowed = ["active", "inactive"];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "status must be 'active' or 'inactive'",
+      });
+    }
+
+    const [result] = await db.query(
+      "UPDATE users SET status = ? WHERE id = ?",
+      [status, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    res.json({ success: true, id: Number(id), status });
+  } catch (err) {
+    console.error("updateUserStatus error:", err);
+    res.status(500).json({ success: false, message: "Failed to update status" });
+  }
+};
+
 // 🔹 GET ALL USERS DETAILS (ADMIN)
 exports.getAllUsersDetails = async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT 
+      `SELECT
         u.id,
         u.full_name,
         u.phone AS mobile_no,
@@ -174,6 +207,8 @@ exports.getAllUsersDetails = async (req, res) => {
         u.risk_factor,
         u.balance,
         u.wallet_balance,
+        u.status,
+        u.created_at,
 
         k.aadhaar_no,
         k.pan_no,

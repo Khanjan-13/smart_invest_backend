@@ -112,20 +112,32 @@ exports.getInvestmentAnalysis = async (req, res) => {
   }
 };
 
+// BUY = `investments` rows; SELL = `investment_transactions` rows (logged when an
+// investment is soft-deleted in portfolio.deleteMultipleInvestments). The legacy
+// query relied on a `type` column that the SELL insert never writes — replaced
+// here with a UNION over the two real sources.
 exports.getInvestmentBehaviour = async (req, res) => {
   try {
     const { user_id } = req.params;
 
     const [data] = await db.query(
-      `SELECT type, SUM(amount) as total
-       FROM investment_transactions
-       WHERE user_id = ?
-       GROUP BY type`,
-      [user_id]
+      `SELECT 'BUY' AS type,
+              COUNT(*) AS count,
+              COALESCE(SUM(amount), 0) AS total
+         FROM investments
+        WHERE user_id = ?
+       UNION ALL
+       SELECT 'SELL' AS type,
+              COUNT(*) AS count,
+              COALESCE(SUM(amount), 0) AS total
+         FROM investment_transactions
+        WHERE user_id = ?`,
+      [user_id, user_id]
     );
 
     res.json({ success: true, data });
   } catch (err) {
+    console.error("getInvestmentBehaviour error:", err);
     res.status(500).json({ message: "Error fetching investment behaviour" });
   }
 };

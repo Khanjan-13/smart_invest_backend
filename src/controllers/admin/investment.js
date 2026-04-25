@@ -14,7 +14,7 @@ exports.getAllInvestments = async (req, res) => {
         i.amount,
         i.nav,
         i.units,
-        i.status AS investment_status,
+        i.status,
         i.created_at AS investment_date,
 
         u.full_name,
