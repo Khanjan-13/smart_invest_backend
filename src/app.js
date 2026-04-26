@@ -15,6 +15,7 @@ const adminUserRoutes = require("./routes/admin/userCreation");
 const analyticsRoutes = require("./routes/admin/userAnalysis");
 const adminInvestmentRoutes = require("./routes/admin/investment");
 const adminDashboardRoutes = require("./routes/admin/dashboard");
+const adminTransactionsRoutes = require("./routes/admin/transactions");
 
 const app = express();
 
@@ -25,7 +26,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/scrape", scrapeIfscRoutes);
 app.use("/api/payment", myQrRoutes, paymentRoutes, setWalletSettingsRoutes, autoInvestRoutes);
 app.use("/api/share-market", indianApiRoutes, portfolioRoutes);
-app.use("/api/admin", adminRoutes, adminUserRoutes, analyticsRoutes, adminInvestmentRoutes, adminDashboardRoutes);
+app.use("/api/admin", adminRoutes, adminUserRoutes, analyticsRoutes, adminInvestmentRoutes, adminDashboardRoutes, adminTransactionsRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "API running on Vercel!" });
